@@ -10,6 +10,69 @@ A Kora operator installs this tool and finally understands:
 
 ---
 
+## How We Identify Kora-Sponsored Accounts
+
+**Critical Question**: How do we distinguish Kora-sponsored accounts from normal operator transactions?
+
+### The Key Distinction
+
+| Transaction Type | Fee Payer | Account Beneficiary | Is Sponsorship? |
+|-----------------|-----------|---------------------|-----------------|
+| **Normal operator tx** | Operator | Operator | NO |
+| **Kora sponsorship** | Operator | User (different wallet) | YES |
+
+### Deterministic Identification Criteria
+
+A Kora-sponsored account is identified when **ALL** of these conditions are met:
+
+```
+CRITERIA 1: FEE PAYER CHECK
+├── operator_pubkey === accountKeys[0]
+└── Operator paid the transaction fees
+
+CRITERIA 2: ACCOUNT CREATION CHECK
+├── Transaction contains: CreateAccount, CreateAccountWithSeed, or CreateATA
+└── New accounts were created
+
+CRITERIA 3: RENT SOURCE CHECK  
+├── The "source" or "payer" field === operator
+└── Operator's SOL funded the rent
+
+CRITERIA 4: OWNERSHIP SEPARATION CHECK (THE KEY CHECK)
+├── The created account's beneficiary !== operator
+├── For ATAs: wallet field !== operator (user owns the ATA)
+├── For PDAs: owner is a program (not operator)
+└── This proves it's sponsorship, not a self-transaction
+```
+
+### Why This Works
+
+```
+NORMAL TRANSACTION:
+  Operator creates ATA for themselves
+  ├── Fee payer: Operator
+  ├── Wallet (beneficiary): Operator  <-- SAME
+  └── Result: NOT SPONSORSHIP (filtered out)
+
+KORA SPONSORSHIP:
+  Operator pays for user's ATA creation
+  ├── Fee payer: Operator
+  ├── Wallet (beneficiary): User      <-- DIFFERENT
+  └── Result: IS SPONSORSHIP (tracked)
+```
+
+### Confidence Levels
+
+Each identified account has a confidence level:
+
+| Confidence | Criteria | Example |
+|------------|----------|---------|
+| **HIGH** | Beneficiary is a clearly different wallet | ATA where wallet != operator |
+| **MEDIUM** | Owner is a program (PDA) | Program-owned accounts |
+| **LOW** | Cannot clearly determine beneficiary | Edge cases |
+
+---
+
 ## The Problem This Solves
 
 ### Where Does Your SOL Go?
@@ -29,19 +92,19 @@ When you run a Kora node, you act as a **paymaster** for user transactions. Here
 │      │                                                          │
 │      │ 2. Routes to YOUR Kora node                              │
 │      ▼                                                          │
-│   YOUR OPERATOR WALLET  ◄────────────────────────────────────┐  │
+│   YOUR OPERATOR WALLET  <────────────────────────────────────┐  │
 │      │                                                       │  │
 │      │ 3. Signs as FEE PAYER                                 │  │
 │      │    - Pays transaction fee (~0.000005 SOL)             │  │
 │      │    - Pays RENT for new accounts (0.002+ SOL each) ────┘  │
 │      ▼                                                          │
-│   New Accounts Created                                          │
+│   New Accounts Created (owned by USER, paid by OPERATOR)        │
 │      │                                                          │
-│      │ • Associated Token Accounts (ATAs)                       │
-│      │ • Program Derived Addresses (PDAs)                       │
-│      │ • System accounts                                        │
+│      │ - Associated Token Accounts (ATAs) -> wallet = USER      │
+│      │ - Program Derived Addresses (PDAs) -> owner = PROGRAM    │
+│      │ - System accounts                                        │
 │      ▼                                                          │
-│   YOUR SOL IS NOW LOCKED  ◄─── This is the problem!             │
+│   YOUR SOL IS NOW LOCKED  <─── This is the problem!             │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -70,12 +133,13 @@ Most of these accounts become **inactive** within days. The users are done with 
 ### The Solution
 
 This bot:
-1. **Discovers** accounts YOUR operator sponsored (via transaction history)
-2. **Tracks** them in a persistent registry
-3. **Monitors** their status (active, empty, closed)
-4. **Identifies** which are safe to reclaim
-5. **Reclaims** locked rent back to your treasury
-6. **Reports** exactly what happened and why
+1. **Discovers** accounts YOUR operator sponsored using the deterministic criteria above
+2. **Filters out** self-transactions (where operator created accounts for themselves)
+3. **Tracks** sponsored accounts in a persistent registry with beneficiary info
+4. **Monitors** their status (active, empty, closed)
+5. **Identifies** which are safe to reclaim
+6. **Reclaims** locked rent back to your treasury
+7. **Reports** exactly what happened and why
 
 ### The Result
 

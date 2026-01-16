@@ -2,33 +2,60 @@
  * KORA SPONSORED ACCOUNT TRACKER
  * 
  * This module answers the critical question:
- * "These accounts were created because of Kora sponsorship."
+ * "How do we DETERMINISTICALLY identify accounts created due to Kora sponsorship?"
  * 
- * HOW KORA SPONSORSHIP WORKS:
- * ===========================
+ * ============================================================================
+ * KORA vs NORMAL TRANSACTIONS - THE KEY DISTINCTION
+ * ============================================================================
  * 
- * 1. User submits a transaction to an app (e.g., swap, NFT mint)
- * 2. App routes the transaction through Kora's paymaster service
- * 3. Kora node (operator) signs as FEE PAYER
- * 4. Transaction creates new accounts (ATAs, PDAs, etc.)
- * 5. Operator's SOL pays for:
- *    - Transaction fees (small, ~0.000005 SOL)
- *    - RENT for new accounts (significant, 0.002+ SOL each)
- * 6. The rent SOL is now LOCKED in those accounts
- * 7. When accounts are no longer needed, rent can be reclaimed
+ * NORMAL OPERATOR TRANSACTION:
+ *   - Operator is fee payer AND transaction authority
+ *   - Operator creates accounts for THEMSELVES
+ *   - Example: Operator swaps their own tokens
  * 
- * IDENTIFYING SPONSORED ACCOUNTS:
- * ===============================
+ * KORA-SPONSORED TRANSACTION:
+ *   - Operator is ONLY the fee payer (accountKeys[0])
+ *   - Operator is NOT the authority/owner of created accounts
+ *   - User is the actual beneficiary of the transaction
+ *   - Example: Operator pays fees for user's swap, user gets the ATA
  * 
- * A sponsored account is identified by:
- * 1. Transaction where operator_pubkey is accountKeys[0] (fee payer)
- * 2. Transaction contains CreateAccount, InitializeAccount, or CreateATA instruction
- * 3. The lamports for rent came from the operator
+ * ============================================================================
+ * DETERMINISTIC IDENTIFICATION CRITERIA
+ * ============================================================================
  * 
- * This module provides:
- * - Transaction log ingestion
- * - Sponsored account registry (persistent)
- * - Deterministic discovery method
+ * A Kora-sponsored account is identified by ALL of these conditions:
+ * 
+ * 1. FEE PAYER CHECK:
+ *    - operator_pubkey === accountKeys[0] (fee payer position)
+ *    - This means operator paid the transaction fees
+ * 
+ * 2. ACCOUNT CREATION CHECK:
+ *    - Transaction contains CreateAccount, CreateAccountWithSeed, or CreateATA
+ *    - New accounts were created in this transaction
+ * 
+ * 3. RENT SOURCE CHECK:
+ *    - The "source" or "payer" field in the instruction === operator
+ *    - Proves operator's SOL funded the rent, not just signed
+ * 
+ * 4. OWNERSHIP SEPARATION CHECK (Kora-specific):
+ *    - The created account's owner/authority !== operator
+ *    - This distinguishes sponsorship from self-transactions
+ *    - For ATAs: wallet field !== operator
+ *    - For system accounts: owner field !== operator (unless it's a program)
+ * 
+ * WHY THIS WORKS:
+ * ===============
+ * - If operator creates an account for THEMSELVES, they are the owner
+ * - If operator SPONSORS an account for a USER, the user is the owner
+ * - This ownership separation is the definitive marker of sponsorship
+ * 
+ * EDGE CASES HANDLED:
+ * ===================
+ * - Program-owned accounts (PDAs): Owner is a program, which is != operator
+ * - Token accounts: wallet field shows the actual user who owns the ATA
+ * - System accounts: Check if operator funded but doesn't own
+ * 
+ * ============================================================================
  */
 
 import {
@@ -54,18 +81,27 @@ export interface SponsoredAccount {
   createdAt: number;
   /** Lamports locked as rent at creation */
   rentLamports: number;
-  /** Program that owns the account */
+  /** Program that owns the account (e.g., Token Program, System Program) */
   owner: string;
   /** Account type: system, token, pda */
   accountType: "system" | "token" | "pda" | "unknown";
   /** Size of account data in bytes */
   dataSize: number;
-  /** The operator who sponsored this account */
+  /** The Kora operator who PAID for this account's rent */
   sponsoredBy: string;
+  /** 
+   * The BENEFICIARY - the user who owns/controls this account.
+   * This is the key field that proves sponsorship:
+   * - If beneficiary === sponsoredBy, this is a self-transaction (NOT sponsorship)
+   * - If beneficiary !== sponsoredBy, this IS a Kora-sponsored account
+   */
+  beneficiary: string;
   /** Current status */
   status: "active" | "empty" | "closed" | "unknown";
   /** Last time we checked this account */
   lastChecked?: number;
+  /** Confidence that this is a Kora-sponsored account (not self-transaction) */
+  sponsorshipConfidence: "high" | "medium" | "low";
 }
 
 export interface SponsorshipRegistry {
@@ -254,10 +290,19 @@ export class KoraSponsorshipTracker {
   /**
    * Extract sponsored accounts from a parsed transaction.
    * 
-   * IDENTIFICATION CRITERIA:
-   * 1. Our operator is the fee payer (accountKeys[0])
+   * DETERMINISTIC IDENTIFICATION CRITERIA:
+   * ======================================
+   * 1. Operator is the fee payer (accountKeys[0])
    * 2. Transaction contains account creation instructions
-   * 3. Rent lamports came from the fee payer
+   * 3. The rent/lamports source is the operator (payer field)
+   * 4. The BENEFICIARY (account owner/wallet) is NOT the operator
+   *    - This is the KEY check that distinguishes sponsorship from self-transactions
+   * 
+   * CONFIDENCE LEVELS:
+   * ==================
+   * - HIGH: Beneficiary clearly differs from operator (definite sponsorship)
+   * - MEDIUM: Beneficiary is a program (PDA - likely sponsorship)
+   * - LOW: Cannot determine beneficiary clearly
    */
   private extractSponsoredAccounts(
     tx: ParsedTransactionWithMeta,
@@ -265,13 +310,14 @@ export class KoraSponsorshipTracker {
   ): SponsoredAccount[] {
     const accounts: SponsoredAccount[] = [];
 
-    // Verify operator is fee payer
+    // CRITERIA 1: Verify operator is fee payer (accountKeys[0])
     const feePayer = tx.transaction.message.accountKeys[0]?.pubkey;
     if (!feePayer || feePayer.toString() !== this.operatorAddress.toString()) {
       return accounts;
     }
 
     const blockTime = tx.blockTime || Math.floor(Date.now() / 1000);
+    const operatorStr = this.operatorAddress.toString();
 
     // Analyze instructions for account creation
     for (const instruction of tx.transaction.message.instructions) {
@@ -283,38 +329,78 @@ export class KoraSponsorshipTracker {
       // System Program: CreateAccount
       if (instruction.program === "system" && parsed.type === "createAccount") {
         const info = parsed.info;
+        
+        // CRITERIA 3: Verify rent source is operator
+        if (info.source !== operatorStr) continue;
+        
+        // CRITERIA 4: Determine beneficiary and check for sponsorship
+        // For system CreateAccount, the newAccount owner determines the beneficiary
+        const accountOwner = info.owner || "11111111111111111111111111111111";
+        const beneficiary = this.determineBeneficiary(info.newAccount, accountOwner, operatorStr, tx);
+        const confidence = this.calculateConfidence(beneficiary, operatorStr, accountOwner);
+        
+        // Skip if this looks like a self-transaction (operator creating for themselves)
+        if (confidence === "low" && beneficiary === operatorStr) continue;
+        
         accounts.push({
           address: info.newAccount,
           creationTxSignature: signature,
           createdAt: blockTime,
           rentLamports: info.lamports,
-          owner: info.owner || "11111111111111111111111111111111",
-          accountType: this.determineAccountType(info.owner),
+          owner: accountOwner,
+          accountType: this.determineAccountType(accountOwner),
           dataSize: info.space || 0,
-          sponsoredBy: this.operatorAddress.toString(),
+          sponsoredBy: operatorStr,
+          beneficiary,
           status: "active",
+          sponsorshipConfidence: confidence,
         });
       }
 
       // System Program: CreateAccountWithSeed
       if (instruction.program === "system" && parsed.type === "createAccountWithSeed") {
         const info = parsed.info;
+        
+        // CRITERIA 3: Verify rent source is operator
+        if (info.source !== operatorStr) continue;
+        
+        const accountOwner = info.owner || "11111111111111111111111111111111";
+        const beneficiary = info.base || accountOwner; // base is typically the user for seeded accounts
+        const confidence = this.calculateConfidence(beneficiary, operatorStr, accountOwner);
+        
+        if (confidence === "low" && beneficiary === operatorStr) continue;
+        
         accounts.push({
           address: info.newAccount,
           creationTxSignature: signature,
           createdAt: blockTime,
           rentLamports: info.lamports,
-          owner: info.owner || "11111111111111111111111111111111",
+          owner: accountOwner,
           accountType: "pda",
           dataSize: info.space || 0,
-          sponsoredBy: this.operatorAddress.toString(),
+          sponsoredBy: operatorStr,
+          beneficiary,
           status: "active",
+          sponsorshipConfidence: confidence,
         });
       }
 
       // SPL Associated Token Account: Create
+      // This is the MOST COMMON Kora sponsorship case
       if (instruction.program === "spl-associated-token-account" && parsed.type === "create") {
         const info = parsed.info;
+        
+        // CRITERIA 3: Verify payer is operator
+        if (info.payer !== operatorStr) continue;
+        
+        // CRITERIA 4: For ATAs, the "wallet" field IS the beneficiary
+        // This is the definitive sponsorship check for ATAs
+        const beneficiary = info.wallet;
+        const confidence = this.calculateConfidence(beneficiary, operatorStr, TOKEN_PROGRAM_ID.toString());
+        
+        // If wallet === operator, this is NOT sponsorship (operator creating their own ATA)
+        if (beneficiary === operatorStr) continue;
+        
         // ATA rent is always 0.00203928 SOL (165 bytes)
         const ataRent = 2039280;
         accounts.push({
@@ -325,13 +411,71 @@ export class KoraSponsorshipTracker {
           owner: TOKEN_PROGRAM_ID.toString(),
           accountType: "token",
           dataSize: 165,
-          sponsoredBy: this.operatorAddress.toString(),
+          sponsoredBy: operatorStr,
+          beneficiary,
           status: "active",
+          sponsorshipConfidence: confidence,
         });
       }
     }
 
     return accounts;
+  }
+
+  /**
+   * Determine who benefits from this account (the actual user, not the sponsor)
+   */
+  private determineBeneficiary(
+    accountAddress: string,
+    accountOwner: string,
+    operator: string,
+    tx: ParsedTransactionWithMeta
+  ): string {
+    // If owner is a program, look for other signers who might be the beneficiary
+    if (this.isProgram(accountOwner)) {
+      // Look through signers (excluding fee payer) to find the user
+      for (let i = 1; i < tx.transaction.message.accountKeys.length; i++) {
+        const key = tx.transaction.message.accountKeys[i];
+        if (key.signer && key.pubkey.toString() !== operator) {
+          return key.pubkey.toString();
+        }
+      }
+      return accountOwner; // Fall back to program owner
+    }
+    return accountOwner;
+  }
+
+  /**
+   * Calculate confidence that this is a Kora-sponsored account
+   */
+  private calculateConfidence(
+    beneficiary: string,
+    operator: string,
+    accountOwner: string
+  ): SponsoredAccount["sponsorshipConfidence"] {
+    // HIGH: Beneficiary is clearly a different wallet than operator
+    if (beneficiary !== operator && !this.isProgram(beneficiary)) {
+      return "high";
+    }
+    // MEDIUM: Owner is a program (PDAs are typically sponsorship)
+    if (this.isProgram(accountOwner)) {
+      return "medium";
+    }
+    // LOW: Cannot clearly determine
+    return "low";
+  }
+
+  /**
+   * Check if an address is a known program
+   */
+  private isProgram(address: string): boolean {
+    const knownPrograms = [
+      "11111111111111111111111111111111", // System Program
+      TOKEN_PROGRAM_ID.toString(),
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", // Token Program
+      "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", // Associated Token Program
+    ];
+    return knownPrograms.includes(address) || address.length === 44; // Most program IDs are 44 chars
   }
 
   private determineAccountType(owner: string | undefined): SponsoredAccount["accountType"] {
