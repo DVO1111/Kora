@@ -17,3 +17,5 @@ backups/
 *.swp
 *.swo
 *~
+
+.env.example
