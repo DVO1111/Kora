@@ -1,0 +1,14 @@
+{
+  "operator": "vines1vzrYbzLMRdu58ou5XTby4qAqVRLmqo36NKPTg",
+  "createdAt": "2026-01-16T15:40:26.272Z",
+  "lastUpdated": "2026-01-16T15:40:40.927Z",
+  "totalTransactionsProcessed": 20,
+  "accounts": [],
+  "metrics": {
+    "totalAccountsSponsored": 0,
+    "totalRentLocked": 0,
+    "totalRentReclaimed": 0,
+    "totalAccountsClosed": 0
+  },
+  "lastProcessedSignature": "2wb9AkizcZit19pVg34dyoVZZKGGQxvuDk1BCRhQr2Tp5PAJJcfVrJGkum5ddETPp4wTtvSxmwWBor1acwhgzZdG"
+}
