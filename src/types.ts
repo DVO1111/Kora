@@ -21,9 +21,12 @@ export interface RentStatus {
 export interface ReclaimResult {
   address: string;
   success: boolean;
+  txSignature?: string;
   transactionSignature?: string;
+  amountReclaimed: number;
   rentReclaimed?: number;
   error?: string;
+  timestamp: Date;
 }
 
 export interface OperatorMetrics {

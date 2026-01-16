@@ -51,7 +51,9 @@ export class ReclaimHandler {
           return {
             address: accountAddress,
             success: true,
+            amountReclaimed: rentAmount,
             rentReclaimed: rentAmount,
+            timestamp: new Date(),
           };
         } else {
           throw new Error("Failed to get transaction signature");
@@ -64,7 +66,9 @@ export class ReclaimHandler {
         address: accountAddress,
         success: true,
         transactionSignature: txSignature,
+        amountReclaimed: rentAmount,
         rentReclaimed: rentAmount,
+        timestamp: new Date(),
       };
     } catch (error) {
       const errorMessage =
@@ -75,6 +79,8 @@ export class ReclaimHandler {
         address: accountAddress,
         success: false,
         error: errorMessage,
+        amountReclaimed: 0,
+        timestamp: new Date(),
       };
     }
   }

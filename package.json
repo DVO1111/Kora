@@ -2,15 +2,19 @@
   "name": "kora-rent-reclaim-bot",
   "version": "1.0.0",
   "description": "Automated rent-reclaim bot for Kora sponsored accounts on Solana",
-  "main": "dist/index.js",
+  "main": "dist/cli.js",
+  "bin": {
+    "kora-bot": "./dist/cli.js"
+  },
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsx watch src/index.ts",
+    "start": "node dist/cli.js",
+    "dev": "tsx watch src/cli.ts",
+    "demo": "node dist/demo.js",
     "monitor": "node dist/monitor.js",
-    "reclaim": "node dist/reclaim.js",
-    "check:accounts": "node dist/checkAccounts.js",
+    "check": "node dist/cli.js check",
+    "reclaim": "node dist/cli.js reclaim",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write src",
     "test": "jest"
