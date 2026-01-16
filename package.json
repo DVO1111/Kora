@@ -1,0 +1,53 @@
+{
+  "name": "kora-rent-reclaim-bot",
+  "version": "1.0.0",
+  "description": "Automated rent-reclaim bot for Kora sponsored accounts on Solana",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "monitor": "node dist/monitor.js",
+    "reclaim": "node dist/reclaim.js",
+    "check:accounts": "node dist/checkAccounts.js",
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write src",
+    "test": "jest"
+  },
+  "keywords": [
+    "kora",
+    "solana",
+    "rent",
+    "reclaim",
+    "paymaster",
+    "bot"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@solana/spl-token": "^0.3.9",
+    "@solana/web3.js": "^1.95.0",
+    "axios": "^1.6.5",
+    "dotenv": "^16.3.1",
+    "node-cron": "^3.0.3",
+    "winston": "^3.11.0",
+    "yargs": "^17.7.2"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/json-schema": "^7.0.15",
+    "@types/node": "^20.19.30",
+    "@types/node-cron": "^3.0.11",
+    "@types/ws": "^8.18.1",
+    "@types/yargs": "^17.0.35",
+    "@typescript-eslint/eslint-plugin": "^6.17.0",
+    "@typescript-eslint/parser": "^6.17.0",
+    "eslint": "^8.56.0",
+    "jest": "^29.7.0",
+    "prettier": "^3.1.1",
+    "ts-jest": "^29.1.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}

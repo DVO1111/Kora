@@ -1,0 +1,34 @@
+{
+  "operatorName": "My Kora Operator",
+  "network": "devnet",
+  "rpcUrl": "https://api.devnet.solana.com",
+  "treasuryAddress": "11111111111111111111111111111112",
+  "monitoring": {
+    "enabled": true,
+    "intervalMinutes": 5,
+    "checkAccountStatus": true,
+    "checkRentEligibility": true
+  },
+  "reclaimPolicy": {
+    "enabled": true,
+    "autoReclaim": false,
+    "minRentToReclaim": 0.002,
+    "maxReclaimPerBatch": 10
+  },
+  "safety": {
+    "dryRun": true,
+    "requiredApprovals": 0,
+    "minAccountAge": 30,
+    "whitelistMode": false,
+    "whitelist": [],
+    "blacklist": []
+  },
+  "alerts": {
+    "enabled": false,
+    "thresholds": {
+      "largeIdleRent": 1.0,
+      "reclaimSuccess": true,
+      "reclaimFailure": true
+    }
+  }
+}

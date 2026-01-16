@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  kora-bot:
+    build: .
+    container_name: kora-rent-reclaim-bot
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+      - SOLANA_RPC_URL=${SOLANA_RPC_URL:-https://api.devnet.solana.com}
+      - OPERATOR_TREASURY_ADDRESS=${OPERATOR_TREASURY_ADDRESS}
+      - DRY_RUN=${DRY_RUN:-true}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+    volumes:
+      # Mount configuration files
+      - ./config.json:/app/config.json:ro
+      - ./accounts.json:/app/accounts.json:ro
+      # Mount keypair (read-only for security)
+      - ./keys:/app/keys:ro
+      # Mount logs (writeable)
+      - ./logs:/app/logs
+      # Mount history for persistence
+      - ./history.json:/app/history.json
+    # Limit resources
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    # Health check
+    healthcheck:
+      test: ["CMD", "node", "-e", "console.log('healthy')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: Run a one-time check
+  kora-check:
+    build: .
+    container_name: kora-check
+    profiles:
+      - tools
+    environment:
+      - LOG_LEVEL=info
+      - SOLANA_RPC_URL=${SOLANA_RPC_URL:-https://api.devnet.solana.com}
+      - DRY_RUN=true
+    volumes:
+      - ./config.json:/app/config.json:ro
+      - ./accounts.json:/app/accounts.json:ro
+      - ./keys:/app/keys:ro
+    command: ["node", "dist/index.js", "check"]
+
+  # Optional: Generate a report
+  kora-report:
+    build: .
+    container_name: kora-report
+    profiles:
+      - tools
+    environment:
+      - LOG_LEVEL=info
+      - SOLANA_RPC_URL=${SOLANA_RPC_URL:-https://api.devnet.solana.com}
+    volumes:
+      - ./config.json:/app/config.json:ro
+      - ./history.json:/app/history.json:ro
+    command: ["node", "dist/index.js", "report", "--format", "json"]
