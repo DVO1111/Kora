@@ -382,7 +382,7 @@ export class SafeRentReclaimer {
     const toProcess = accounts.slice(0, this.safetyConfig.maxAccountsPerRun);
 
     console.log(`\n${"═".repeat(60)}`);
-    console.log(dryRun ? "   ⚠️  DRY RUN - No transactions will be sent" : "   🚀 EXECUTING RECLAIMS");
+    console.log(dryRun ? "   DRY RUN - No transactions will be sent" : "   EXECUTING RECLAIMS");
     console.log(`${"═".repeat(60)}`);
     console.log(`   Accounts to process: ${toProcess.length}`);
     console.log(`   Treasury: ${this.treasury.toString()}`);
@@ -396,7 +396,7 @@ export class SafeRentReclaimer {
       const validation = await this.validateAccount(account);
 
       if (!validation.canReclaim) {
-        console.log(`   ❌ ${account.address.slice(0, 12)}...`);
+        console.log(`   [SKIP] ${account.address.slice(0, 12)}...`);
         console.log(`      Reason: ${validation.reason}`);
         console.log();
         continue;
@@ -411,13 +411,13 @@ export class SafeRentReclaimer {
 
       const lamportsBefore = info.lamports;
 
-      console.log(`   ✓ ${account.address.slice(0, 12)}...`);
+      console.log(`   [OK] ${account.address.slice(0, 12)}...`);
       console.log(`      Type: ${account.accountType}`);
       console.log(`      Value: ${(lamportsBefore / LAMPORTS_PER_SOL).toFixed(6)} SOL`);
       console.log(`      Risk: ${validation.riskLevel}`);
 
       if (dryRun) {
-        console.log(`      → Would reclaim ${(lamportsBefore / LAMPORTS_PER_SOL).toFixed(6)} SOL`);
+        console.log(`      -> Would reclaim ${(lamportsBefore / LAMPORTS_PER_SOL).toFixed(6)} SOL`);
         report.accountsReclaimed++;
         report.totalLamportsReclaimed += lamportsBefore;
         report.transactions.push({
@@ -434,7 +434,7 @@ export class SafeRentReclaimer {
       } else {
         // STEP 3: Execute reclaim
         if (!this.keypair) {
-          console.log(`      ❌ No keypair - cannot execute`);
+          console.log(`      [ERROR] No keypair - cannot execute`);
           report.errors.push({ address: account.address, error: "No keypair" });
           report.accountsFailed++;
           continue;
@@ -480,8 +480,8 @@ export class SafeRentReclaimer {
           const treasuryBalanceAfter = await this.connection.getBalance(this.treasury);
           const verified = treasuryBalanceAfter > treasuryBalanceBefore;
 
-          console.log(`      ✅ Tx: ${txSignature.slice(0, 20)}...`);
-          console.log(`      ✅ Verified: ${verified}`);
+          console.log(`      Tx: ${txSignature.slice(0, 20)}...`);
+          console.log(`      Verified: ${verified}`);
 
           report.accountsReclaimed++;
           report.totalLamportsReclaimed += lamportsBefore - lamportsAfter;
@@ -502,7 +502,7 @@ export class SafeRentReclaimer {
           }
 
         } catch (error) {
-          console.log(`      ❌ Failed: ${(error as Error).message}`);
+          console.log(`      [FAILED] ${(error as Error).message}`);
           report.errors.push({
             address: account.address,
             error: (error as Error).message,
@@ -535,7 +535,7 @@ export class SafeRentReclaimer {
     const filename = `${report.runId}.json`;
     const filepath = path.join(this.reportsPath, filename);
     fs.writeFileSync(filepath, JSON.stringify(report, null, 2));
-    console.log(`📝 Report saved: ${filepath}`);
+    console.log(`Report saved: ${filepath}`);
   }
 
   private printSummary(report: ReclaimReport, treasuryBefore: number): void {

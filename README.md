@@ -3,14 +3,14 @@
 > **Recover locked SOL from Kora-sponsored accounts**
 
 A Kora operator installs this tool and finally understands:
-- 💰 How much SOL is silently locked
-- 📍 Where it is locked  
-- 💀 Which accounts are dead
-- ♻️ And gets their SOL back safely
+- How much SOL is silently locked
+- Where it is locked  
+- Which accounts are dead
+- And gets their SOL back safely
 
 ---
 
-## 🎯 The Problem This Solves
+## The Problem This Solves
 
 ### Where Does Your SOL Go?
 
@@ -65,7 +65,7 @@ Most of these accounts become **inactive** within days. The users are done with 
 
 ---
 
-## 🔧 How This Bot Helps
+## How This Bot Helps
 
 ### The Solution
 
@@ -86,20 +86,20 @@ $ kora-rent-bot scan
              SPONSORED ACCOUNT SCAN RESULTS
 ═══════════════════════════════════════════════════════════════
 
-📊 Account Summary:
+Account Summary:
    Total sponsored accounts: 1,247
-   🟢 Active (do not touch): 891
-   ⚪ Closed / reclaimed:    312
-   🔴 Empty / reclaimable:   44
+   Active (do not touch): 891
+   Closed / reclaimed:    312
+   Empty / reclaimable:   44
 
-💰 SOL Summary:
+SOL Summary:
    Total rent locked:   152.34 SOL
-   ♻️  Reclaimable now:   37.81 SOL
+   Reclaimable now:     37.81 SOL
 ```
 
 ---
 
-## 📦 Installation
+## Installation
 
 ```bash
 # Clone the repository
@@ -119,7 +119,7 @@ cp config.example.json config.json
 
 ---
 
-## 🚀 Usage
+## Usage
 
 ### Step 1: Discover Sponsored Accounts
 
@@ -144,18 +144,18 @@ kora-rent-bot scan --operator YOUR_OPERATOR_ADDRESS
 
 Output:
 ```
-📊 Account Summary:
+Account Summary:
    Total sponsored accounts: 1,247
-   🟢 Active (do not touch): 891
-   ⚪ Closed / reclaimed:    312
-   🔴 Empty / reclaimable:   44
+   Active (do not touch): 891
+   Closed / reclaimed:    312
+   Empty / reclaimable:   44
 
-💰 SOL Summary:
+SOL Summary:
    Total rent locked:   152.34 SOL
-   ♻️  Reclaimable now:   37.81 SOL
+   Reclaimable now:     37.81 SOL
 
 ──────────────────────────────────────────────────────────────
-🔴 Reclaimable Accounts (44):
+Reclaimable Accounts (44):
 
    Account:  5Ce2vQd...
    Type:     token
@@ -212,15 +212,15 @@ kora-rent-bot reclaim \
 Output:
 ```
 ═══════════════════════════════════════════════════════════════
-   🚀 EXECUTING RECLAIMS
-═══════════════════════════════════════════════════════════════
+   EXECUTING RECLAIMS
+═════════════════════════════════════════════════════════════
 
-   ✓ 5Ce2vQd...
+   [OK] 5Ce2vQd...
       Type: token
       Value: 0.002039 SOL
       Risk: safe
-      ✅ Tx: 5Kj3nMv...
-      ✅ Verified: true
+      Tx: 5Kj3nMv...
+      Verified: true
 
 ──────────────────────────────────────────────────────────────
                     RECLAIM SUMMARY
@@ -242,19 +242,19 @@ kora-rent-bot report --operator YOUR_OPERATOR_ADDRESS
 
 ---
 
-## 🛡️ Safety Guarantees
+## Safety Guarantees
 
 This bot is **defensive by design**. It will **NEVER**:
 
 | Rule | Protection |
 |------|------------|
-| ❌ Reclaim active accounts | Only touches accounts with zero balance/empty data |
-| ❌ Reclaim recent accounts | Minimum 7-day inactivity threshold |
-| ❌ Reclaim accounts with recent activity | Checks for writes in last 3 days |
-| ❌ Reclaim accounts you don't own | Verifies ownership before close |
-| ❌ Reclaim high-value accounts without review | Flags accounts > 0.1 SOL |
-| ❌ Touch PDA accounts | PDAs require manual review |
-| ❌ Touch deny-listed accounts | Configurable deny list |
+| Reclaim active accounts | Only touches accounts with zero balance/empty data |
+| Reclaim recent accounts | Minimum 7-day inactivity threshold |
+| Reclaim accounts with recent activity | Checks for writes in last 3 days |
+| Reclaim accounts you don't own | Verifies ownership before close |
+| Reclaim high-value accounts without review | Flags accounts > 0.1 SOL |
+| Touch PDA accounts | PDAs require manual review |
+| Touch deny-listed accounts | Configurable deny list |
 
 ### Validation Checks
 
@@ -273,7 +273,7 @@ checks: {
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 Create `config.json`:
 
@@ -297,7 +297,7 @@ export PRIVATE_KEY_PATH=./keypair.json
 
 ---
 
-## 📊 Commands Reference
+## Commands Reference
 
 | Command | Description |
 |---------|-------------|
@@ -322,7 +322,7 @@ export PRIVATE_KEY_PATH=./keypair.json
 
 ---
 
-## 📁 Data Files
+## Data Files
 
 The bot maintains these files:
 
@@ -378,7 +378,7 @@ data/
 
 ---
 
-## 🤔 FAQ
+## FAQ
 
 ### How do I know an account was sponsored by Kora?
 
@@ -412,13 +412,13 @@ Depends on your sponsorship volume. Typical results:
 
 ---
 
-## 📜 License
+## License
 
 MIT
 
 ---
 
-## 🙏 Contributing
+## Contributing
 
 PRs welcome! Please ensure:
 - All safety checks remain in place

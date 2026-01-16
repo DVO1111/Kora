@@ -120,7 +120,7 @@ export class KoraSponsorshipTracker {
       try {
         return JSON.parse(fs.readFileSync(this.registryPath, "utf-8"));
       } catch {
-        console.log("⚠️ Failed to load registry, creating new one");
+        console.log("Warning: Failed to load registry, creating new one");
       }
     }
 
@@ -173,7 +173,7 @@ export class KoraSponsorshipTracker {
     let newAccountsFound = 0;
     let errors = 0;
 
-    console.log(`\n📥 Ingesting transaction history for operator...`);
+    console.log(`\nIngesting transaction history for operator...`);
     console.log(`   Operator: ${this.operatorAddress.toString()}`);
     console.log(`   Starting from: ${this.registry.lastProcessedSignature || "beginning"}`);
 
@@ -245,7 +245,7 @@ export class KoraSponsorshipTracker {
       this.saveRegistry();
 
     } catch (error) {
-      console.error(`   ❌ Ingestion error: ${(error as Error).message}`);
+      console.error(`   Ingestion error: ${(error as Error).message}`);
     }
 
     return { transactionsProcessed, newAccountsFound, errors };
@@ -371,7 +371,7 @@ export class KoraSponsorshipTracker {
     let updated = 0;
 
     const total = this.registry.accounts.length;
-    console.log(`\n🔄 Refreshing status of ${total} tracked accounts...`);
+    console.log(`\nRefreshing status of ${total} tracked accounts...`);
 
     for (let i = 0; i < this.registry.accounts.length; i++) {
       const account = this.registry.accounts[i];

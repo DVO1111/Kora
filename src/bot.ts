@@ -68,7 +68,7 @@ function printBanner(): void {
   console.log(`
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
-║   🤖  KORA RENT RECLAIM BOT                                  ║
+║   KORA RENT RECLAIM BOT                                      ║
 ║                                                              ║
 ║   Recover locked SOL from sponsored accounts                 ║
 ║                                                              ║
@@ -121,11 +121,11 @@ async function main() {
 
         const operator = (args.operator as string) || config.operatorAddress;
         if (!operator) {
-          console.error("❌ Error: --operator required");
+          console.error("Error: --operator required");
           process.exit(1);
         }
 
-        console.log(`📋 Configuration:`);
+        console.log(`Configuration:`);
         console.log(`   Network:  ${args.rpc}`);
         console.log(`   Operator: ${operator}`);
         console.log(`   Limit:    ${args.limit} transactions`);
@@ -153,7 +153,7 @@ async function main() {
         console.log(`   Errors:                 ${result.errors}`);
 
         const metrics = tracker.getMetrics();
-        console.log(`\n📊 Registry Totals:`);
+        console.log(`\nRegistry Totals:`);
         console.log(`   Total accounts tracked: ${metrics.totalAccountsSponsored}`);
         console.log(`   Total rent locked:      ${formatSol(metrics.totalRentLocked)}`);
         console.log(`   Total reclaimed:        ${formatSol(metrics.totalRentReclaimed)}`);
@@ -173,11 +173,11 @@ async function main() {
 
         const operator = (args.operator as string) || config.operatorAddress;
         if (!operator) {
-          console.error("❌ Error: --operator required");
+          console.error("Error: --operator required");
           process.exit(1);
         }
 
-        console.log(`📋 Configuration:`);
+        console.log(`Configuration:`);
         console.log(`   Network:  ${args.rpc}`);
         console.log(`   Operator: ${operator}`);
 
@@ -189,12 +189,12 @@ async function main() {
 
         const registry = tracker.getRegistry();
         if (registry.accounts.length === 0) {
-          console.log(`\n⚠️ No sponsored accounts in registry.`);
+          console.log(`\nNo sponsored accounts in registry.`);
           console.log(`   Run 'kora-rent-bot ingest' first to discover accounts.\n`);
           return;
         }
 
-        console.log(`\n🔄 Refreshing status of ${registry.accounts.length} accounts...`);
+        console.log(`\nRefreshing status of ${registry.accounts.length} accounts...`);
 
         const result = await tracker.refreshAccountStatuses((checked, total) => {
           process.stdout.write(`\r   Checked ${checked}/${total}`);
@@ -219,19 +219,19 @@ async function main() {
         console.log(`\n\n${"═".repeat(60)}`);
         console.log("             SPONSORED ACCOUNT SCAN RESULTS");
         console.log(`${"═".repeat(60)}`);
-        console.log(`\n📊 Account Summary:`);
+        console.log(`\nAccount Summary:`);
         console.log(`   Total sponsored accounts: ${accounts.length}`);
-        console.log(`   🟢 Active (do not touch): ${result.active}`);
-        console.log(`   ⚪ Closed / reclaimed:    ${result.closed}`);
-        console.log(`   🔴 Empty / reclaimable:   ${result.empty}`);
+        console.log(`   Active (do not touch): ${result.active}`);
+        console.log(`   Closed / reclaimed:    ${result.closed}`);
+        console.log(`   Empty / reclaimable:   ${result.empty}`);
 
-        console.log(`\n💰 SOL Summary:`);
+        console.log(`\nSOL Summary:`);
         console.log(`   Total rent locked:   ${formatSol(totalLocked)}`);
-        console.log(`   ♻️  Reclaimable now:   ${formatSol(totalReclaimable)}`);
+        console.log(`   Reclaimable now:     ${formatSol(totalReclaimable)}`);
 
         if (reclaimable.length > 0) {
           console.log(`\n${"─".repeat(60)}`);
-          console.log(`🔴 Reclaimable Accounts (${reclaimable.length}):\n`);
+          console.log(`Reclaimable Accounts (${reclaimable.length}):\n`);
 
           for (const acc of reclaimable.slice(0, 10)) {
             console.log(`   Account:  ${acc.address.slice(0, 16)}...`);
@@ -247,7 +247,7 @@ async function main() {
           }
         }
 
-        console.log(`\n📈 Historical Metrics:`);
+        console.log(`\nHistorical Metrics:`);
         console.log(`   Total ever sponsored: ${metrics.totalAccountsSponsored}`);
         console.log(`   Total ever locked:    ${formatSol(metrics.totalRentLocked)}`);
         console.log(`   Total reclaimed:      ${formatSol(metrics.totalRentReclaimed)}`);
@@ -262,7 +262,7 @@ async function main() {
         console.log(`${"═".repeat(60)}\n`);
 
         if (reclaimable.length > 0) {
-          console.log(`💡 To reclaim, run:`);
+          console.log(`To reclaim, run:`);
           console.log(`   kora-rent-bot reclaim --dry-run`);
           console.log(`   kora-rent-bot reclaim --execute --key <keypair.json>\n`);
         }
@@ -312,7 +312,7 @@ async function main() {
         const dryRun = !args.execute;
 
         if (!operator) {
-          console.error("❌ Error: --operator required");
+          console.error("Error: --operator required");
           process.exit(1);
         }
 
@@ -320,11 +320,11 @@ async function main() {
         const keyPath = (args.key as string) || config.privateKeyPath;
 
         if (!dryRun && !keyPath) {
-          console.error("❌ Error: --key required for execution");
+          console.error("Error: --key required for execution");
           process.exit(1);
         }
 
-        console.log(`📋 Configuration:`);
+        console.log(`Configuration:`);
         console.log(`   Network:   ${args.rpc}`);
         console.log(`   Operator:  ${operator}`);
         console.log(`   Treasury:  ${treasury}`);
@@ -339,13 +339,13 @@ async function main() {
         );
 
         // Refresh statuses first
-        console.log(`\n🔄 Refreshing account statuses...`);
+        console.log(`\nRefreshing account statuses...`);
         await tracker.refreshAccountStatuses();
 
         const reclaimable = tracker.getReclaimableAccounts();
 
         if (reclaimable.length === 0) {
-          console.log(`\n✅ No reclaimable accounts found.\n`);
+          console.log(`\nNo reclaimable accounts found.\n`);
           return;
         }
 
@@ -373,7 +373,7 @@ async function main() {
         );
 
         if (!dryRun && report.accountsReclaimed > 0) {
-          console.log(`\n✅ Successfully reclaimed ${formatSol(report.totalLamportsReclaimed)}`);
+          console.log(`\nSuccessfully reclaimed ${formatSol(report.totalLamportsReclaimed)}`);
           console.log(`   Transaction signatures saved to ./data/reclaim-reports/`);
         }
       }
@@ -396,7 +396,7 @@ async function main() {
 
         const operator = (args.operator as string) || config.operatorAddress;
         if (!operator) {
-          console.error("❌ Error: --operator required");
+          console.error("Error: --operator required");
           process.exit(1);
         }
 
@@ -412,11 +412,11 @@ async function main() {
         console.log(`${"═".repeat(60)}`);
         console.log("               OPERATOR METRICS REPORT");
         console.log(`${"═".repeat(60)}`);
-        console.log(`\n📋 Operator: ${operator}`);
+        console.log(`\nOperator: ${operator}`);
         console.log(`   Registry created: ${registry.createdAt}`);
         console.log(`   Last updated:     ${registry.lastUpdated}`);
 
-        console.log(`\n📊 Lifetime Metrics:`);
+        console.log(`\nLifetime Metrics:`);
         console.log(`   ┌─────────────────────────────────────────┐`);
         console.log(`   │ Total accounts sponsored:  ${String(metrics.totalAccountsSponsored).padStart(10)} │`);
         console.log(`   │ Total rent locked:         ${formatSol(metrics.totalRentLocked).padStart(10)} │`);
@@ -429,7 +429,7 @@ async function main() {
             (metrics.totalRentReclaimed / metrics.totalRentLocked) * 100;
           const remaining = metrics.totalRentLocked - metrics.totalRentReclaimed;
 
-          console.log(`\n💰 Financial Summary:`);
+          console.log(`\nFinancial Summary:`);
           console.log(`   Reclaim efficiency: ${efficiency.toFixed(1)}%`);
           console.log(`   Remaining locked:   ${formatSol(remaining)}`);
         }
@@ -445,7 +445,7 @@ async function main() {
             .slice(0, args.last);
 
           if (reports.length > 0) {
-            console.log(`\n📜 Recent Reclaim Runs (last ${reports.length}):\n`);
+            console.log(`\nRecent Reclaim Runs (last ${reports.length}):\n`);
 
             for (const reportFile of reports) {
               const report = JSON.parse(
@@ -480,7 +480,7 @@ async function main() {
         const connection = new Connection(args.rpc as string, "confirmed");
         const address = args.address as string;
 
-        console.log(`\n📋 Account Status: ${address}\n`);
+        console.log(`\nAccount Status: ${address}\n`);
         console.log(`${"─".repeat(50)}`);
 
         try {
@@ -504,7 +504,7 @@ async function main() {
             console.log(`   Rent Exempt: ${info.lamports >= minRent ? "Yes" : "No"}`);
             console.log(`   Is Empty:    ${isEmpty ? "Yes" : "No"}`);
             console.log(
-              `   Reclaimable: ${isEmpty ? "YES ✓" : "No (has data)"}`
+              `   Reclaimable: ${isEmpty ? "YES" : "No (has data)"}`
             );
           }
 
