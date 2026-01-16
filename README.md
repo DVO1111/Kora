@@ -476,6 +476,98 @@ Depends on your sponsorship volume. Typical results:
 
 ---
 
+## Demo Script - Quick Start
+
+Ready-to-run commands to test the bot. Replace `YOUR_OPERATOR_ADDRESS` with your actual Solana address.
+
+```bash
+# 1. Build the project
+npm run build
+
+# 2. Check system status
+npx ts-node src/bot.ts status --operator YOUR_OPERATOR_ADDRESS
+
+# 3. Ingest historical sponsorships (adjust limit as needed)
+npx ts-node src/bot.ts ingest --operator YOUR_OPERATOR_ADDRESS --limit 100
+
+# 4. Scan for reclaimable accounts
+npx ts-node src/bot.ts scan --operator YOUR_OPERATOR_ADDRESS
+
+# 5. Generate a report
+npx ts-node src/bot.ts report --operator YOUR_OPERATOR_ADDRESS
+
+# 6. Dry-run reclaim (SAFE - no actual transactions)
+npx ts-node src/bot.ts reclaim \
+  --operator YOUR_OPERATOR_ADDRESS \
+  --key ./path/to/keypair.json \
+  --dry-run
+
+# 7. Start watch mode for observable scheduled runs
+npx ts-node src/bot.ts watch \
+  --operator YOUR_OPERATOR_ADDRESS \
+  --interval 60
+
+# 8. Watch mode WITH auto-reclaim (use carefully!)
+npx ts-node src/bot.ts watch \
+  --operator YOUR_OPERATOR_ADDRESS \
+  --interval 60 \
+  --auto-reclaim \
+  --key ./path/to/keypair.json \
+  --treasury YOUR_TREASURY_ADDRESS
+```
+
+### Expected Watch Mode Output
+
+When running in watch mode, you'll see timestamped logs like this:
+
+```
+============================================================
+   KORA RENT RECLAIM BOT - WATCH MODE
+============================================================
+[2025-01-20 08:00:00] Watch mode started
+[2025-01-20 08:00:00] Operator: 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU
+[2025-01-20 08:00:00] Scan interval: 60 minutes
+[2025-01-20 08:00:00] Auto-reclaim: ENABLED
+[2025-01-20 08:00:00] Treasury: 9yVmSvE5tz5wPP1TAj4PvmFZHMRBvETNqKYBHrdJuq3Z
+------------------------------------------------------------
+
+[2025-01-20 08:00:01] Automatic scan starting...
+[2025-01-20 08:00:05] Automatic scan complete
+[2025-01-20 08:00:05] Found: 12 accounts eligible for reclaim
+[2025-01-20 08:00:05] Total tracked: 847 accounts
+[2025-01-20 08:00:05] Status: 623 active, 212 empty, 12 closed
+[2025-01-20 08:00:05] Reclaimable SOL: 0.024 SOL
+[2025-01-20 08:00:05] Auto-reclaim triggered for 12 accounts
+[2025-01-20 08:00:12] Reclaimed: 0.024 SOL
+[2025-01-20 08:00:12] Accounts processed: 12/12
+------------------------------------------------------------
+[2025-01-20 08:00:12] Next scan in 60 minutes
+
+[2025-01-20 09:00:00] Automatic scan starting...
+[2025-01-20 09:00:04] Automatic scan complete
+[2025-01-20 09:00:04] Found: 3 accounts eligible for reclaim
+...
+```
+
+### Quick Devnet Test
+
+For testing without real SOL:
+
+```bash
+# Use devnet RPC
+export RPC_URL="https://api.devnet.solana.com"
+
+# Create test keypair (if needed)
+solana-keygen new -o ./test-keypair.json
+
+# Run scan on devnet
+npx ts-node src/bot.ts scan \
+  --operator $(solana-keygen pubkey ./test-keypair.json) \
+  --rpc $RPC_URL
+```
+
+---
+
 ## License
 
 MIT

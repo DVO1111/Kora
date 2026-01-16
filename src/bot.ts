@@ -84,6 +84,14 @@ function formatDate(timestamp: number): string {
   return new Date(timestamp * 1000).toLocaleDateString();
 }
 
+function formatTimestamp(): string {
+  return new Date().toISOString().replace('T', ' ').substring(0, 19);
+}
+
+function log(message: string): void {
+  console.log(`[${formatTimestamp()}] ${message}`);
+}
+
 // ============================================================================
 // MAIN CLI
 // ============================================================================
@@ -529,6 +537,137 @@ async function main() {
         }
 
         console.log(`${"─".repeat(50)}\n`);
+      }
+    )
+
+    // ========================================================================
+    // WATCH COMMAND - Scheduled automatic runs with observable logs
+    // ========================================================================
+    .command(
+      "watch",
+      "Run scheduled automatic scans with observable timestamped logs",
+      (y) =>
+        y
+          .option("interval", {
+            type: "number",
+            description: "Scan interval in minutes",
+            default: 60,
+          })
+          .option("auto-reclaim", {
+            type: "boolean",
+            description: "Automatically reclaim eligible accounts",
+            default: false,
+          })
+          .option("key", {
+            type: "string",
+            description: "Path to keypair JSON (required for auto-reclaim)",
+          })
+          .option("treasury", {
+            type: "string",
+            description: "Treasury address for reclaimed SOL",
+          }),
+      async (args) => {
+        const operator = (args.operator as string) || config.operatorAddress;
+        const autoReclaim = args["auto-reclaim"] as boolean;
+
+        if (!operator) {
+          console.error("Error: --operator required");
+          process.exit(1);
+        }
+
+        if (autoReclaim && !args.key && !config.privateKeyPath) {
+          console.error("Error: --key required for auto-reclaim");
+          process.exit(1);
+        }
+
+        const intervalMs = (args.interval as number) * 60 * 1000;
+        const treasury = (args.treasury as string) || config.treasuryAddress || operator;
+        const keyPath = (args.key as string) || config.privateKeyPath;
+
+        console.log(`${"═".repeat(60)}`);
+        console.log("   KORA RENT RECLAIM BOT - WATCH MODE");
+        console.log(`${"═".repeat(60)}`);
+        log(`Watch mode started`);
+        log(`Operator: ${operator}`);
+        log(`Scan interval: ${args.interval} minutes`);
+        log(`Auto-reclaim: ${autoReclaim ? "ENABLED" : "disabled"}`);
+        if (autoReclaim) {
+          log(`Treasury: ${treasury}`);
+        }
+        console.log(`${"─".repeat(60)}`);
+        console.log();
+
+        // Run immediately, then on interval
+        const runScan = async () => {
+          log(`Automatic scan starting...`);
+
+          try {
+            const tracker = new KoraSponsorshipTracker(
+              args.rpc as string,
+              operator,
+              "./data/sponsorship-registry.json"
+            );
+
+            // Refresh statuses
+            const result = await tracker.refreshAccountStatuses();
+
+            const reclaimable = tracker.getReclaimableAccounts();
+            const metrics = tracker.getMetrics();
+
+            log(`Automatic scan complete`);
+            log(`Found: ${reclaimable.length} accounts eligible for reclaim`);
+            log(`Total tracked: ${metrics.totalAccountsSponsored} accounts`);
+            log(`Status: ${result.active} active, ${result.empty} empty, ${result.closed} closed`);
+
+            if (reclaimable.length > 0) {
+              let totalReclaimable = 0;
+              for (const acc of reclaimable) {
+                totalReclaimable += acc.rentLamports;
+              }
+              log(`Reclaimable SOL: ${formatSol(totalReclaimable)}`);
+
+              if (autoReclaim && reclaimable.length > 0) {
+                log(`Auto-reclaim triggered for ${reclaimable.length} accounts`);
+
+                const reclaimer = new SafeRentReclaimer(
+                  args.rpc as string,
+                  keyPath || null,
+                  treasury,
+                  { maxAccountsPerRun: 10 } // Conservative limit for auto mode
+                );
+
+                const report = await reclaimer.executeReclaim(
+                  reclaimable,
+                  false, // Not dry run
+                  (account) => {
+                    tracker.recordReclaim(account.address, account.rentLamports);
+                  }
+                );
+
+                log(`Reclaimed: ${formatSol(report.totalLamportsReclaimed)}`);
+                log(`Accounts processed: ${report.accountsReclaimed}/${report.accountsAnalyzed}`);
+              }
+            } else {
+              log(`No accounts eligible for reclaim at this time`);
+            }
+
+          } catch (error) {
+            log(`Scan error: ${(error as Error).message}`);
+          }
+
+          console.log(`${"─".repeat(60)}`);
+          log(`Next scan in ${args.interval} minutes`);
+          console.log();
+        };
+
+        // Initial run
+        await runScan();
+
+        // Schedule subsequent runs
+        setInterval(runScan, intervalMs);
+
+        // Keep process alive
+        log(`Watch mode active. Press Ctrl+C to stop.`);
       }
     )
 
