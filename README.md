@@ -38,8 +38,8 @@ This bot helps Kora operators recover locked SOL rent from closed or inactive ac
 ## Installation
 
 ```bash
-git clone https://github.com/yourusername/kora-rent-reclaim-bot.git
-cd kora-rent-reclaim-bot
+git clone https://github.com/DVO1111/Kora.git
+cd Kora
 
 npm install
 npm run build
@@ -498,7 +498,7 @@ npm run reclaim -- --accounts <TEST_ACCOUNT>
 
 ## Contributing
 
-This is a reference implementation. Fork, modify, and adapt to your needs!
+Contributions are welcome! Please feel free to submit a Pull Request to [https://github.com/DVO1111/Kora](https://github.com/DVO1111/Kora).
 
 ## Security Considerations
 
@@ -516,7 +516,7 @@ MIT
 ## Support
 
 For questions or issues:
-- Open an issue on GitHub
+- Open an issue on [GitHub](https://github.com/DVO1111/Kora/issues)
 - Ask on [Solana Stack Exchange](https://solana.stackexchange.com/) with `kora` tag
 - Check [Kora docs](https://launch.solana.com/docs/kora)
 

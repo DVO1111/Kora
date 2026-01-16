@@ -13,8 +13,8 @@ Get up and running in 5 minutes!
 
 ```bash
 # Clone the repository
-git clone <repo-url>
-cd kora-rent-reclaim-bot
+git clone https://github.com/DVO1111/Kora.git
+cd Kora
 
 # Install dependencies
 npm install
