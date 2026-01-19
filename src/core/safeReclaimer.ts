@@ -3,6 +3,22 @@
  * 
  * This module handles the actual reclaim with DEFENSIVE safety rules.
  * 
+ * IMPORTANT LIMITATION:
+ * =====================
+ * On Solana, you can ONLY close accounts you OWN. When Kora sponsors account
+ * creation, the USER becomes the owner, not the operator. This means:
+ * 
+ * - You CANNOT close token accounts (ATAs) you sponsored - user owns them
+ * - You CANNOT transfer lamports from accounts you don't own
+ * - You CAN only track what you've sponsored and monitor for closures
+ * 
+ * WHAT THIS MODULE CAN DO:
+ * ========================
+ * 1. Track accounts that were already closed (by users) - rent returned to user
+ * 2. Close token accounts where you ARE the owner (rare - only if you kept authority)
+ * 3. Close system accounts you own (rare)
+ * 4. Monitor and report on locked rent
+ * 
  * SAFETY RULES (HARD REQUIREMENTS):
  * =================================
  * 
@@ -14,23 +30,19 @@
  *    - Check account's recent transaction history
  *    - If any writes in last RECENT_WRITE_DAYS, skip
  * 
- * 3. PROGRAM-OWNED ACCOUNT HANDLING
- *    - System accounts: Can close if empty
- *    - Token accounts: Can close if zero balance AND owner matches
- *    - PDA accounts: NEVER auto-close (require manual review)
+ * 3. OWNERSHIP VERIFICATION (CRITICAL)
+ *    - Token accounts: MUST verify we have close authority
+ *    - System accounts: MUST verify we own the account
+ *    - Only attempt close if ownership confirmed
  * 
- * 4. ATA VS SYSTEM ACCOUNT DIFFERENTIATION
- *    - ATAs (165 bytes): Use closeAccount instruction
- *    - System accounts (0 bytes): Transfer lamports
- * 
- * 5. EXPLICIT DENY-LIST
+ * 4. EXPLICIT DENY-LIST
  *    - Never touch program accounts
  *    - Never touch accounts in denyList
  *    - Never touch accounts with non-zero token balance
  * 
  * RECLAIM LIFECYCLE:
  * ==================
- * discover → classify → validate → dry-run → reclaim → verify → log
+ * discover → classify → validate ownership → dry-run → reclaim → verify → log
  */
 
 import {
@@ -256,16 +268,20 @@ export class SafeRentReclaimer {
       };
     }
 
-    // CHECK 7: Account type specific validation
+    // CHECK 7: Account type specific validation with OWNERSHIP VERIFICATION
     if (account.accountType === "token") {
-      // Token account: verify zero balance
+      // Token account: verify zero balance AND ownership
       try {
         const tokenAccount = await getAccount(this.connection, pubkey);
         checks.isEmptyOrZeroBalance = tokenAccount.amount === 0n;
         
-        // Verify we can close it (owner must be our keypair)
+        // CRITICAL: Verify we have authority to close this account
+        // For ATAs, the "owner" field is the wallet that owns the tokens
+        // We can ONLY close if we are that owner
         if (this.keypair) {
           checks.ownershipVerified = tokenAccount.owner.equals(this.keypair.publicKey);
+        } else {
+          checks.ownershipVerified = false;
         }
 
         if (!checks.isEmptyOrZeroBalance) {
@@ -279,28 +295,54 @@ export class SafeRentReclaimer {
         }
 
         if (!checks.ownershipVerified) {
+          // This is the EXPECTED case for Kora-sponsored accounts
+          // The USER owns the ATA, not the operator who paid for it
           return {
             address: account.address,
             canReclaim: false,
-            reason: "Cannot close: not the token account owner",
-            riskLevel: "medium",
+            reason: "Cannot close: you sponsored this account but USER owns it (this is normal for Kora)",
+            riskLevel: "blocked", // Changed from medium - this is not reclaimable
             checks,
           };
         }
-      } catch {
-        checks.isEmptyOrZeroBalance = true; // Account might be invalid/empty
+      } catch (error) {
+        // If we can't read the token account, it might be in an invalid state
+        return {
+          address: account.address,
+          canReclaim: false,
+          reason: `Cannot read token account state: ${(error as Error).message}`,
+          riskLevel: "medium",
+          checks,
+        };
       }
     } else if (account.accountType === "pda") {
       // PDA accounts: NEVER auto-close
       return {
         address: account.address,
         canReclaim: false,
-        reason: "PDA accounts require manual review - skipping",
-        riskLevel: "high",
+        reason: "PDA accounts require program authority - cannot auto-close",
+        riskLevel: "blocked",
         checks,
       };
     } else {
-      // System account: verify empty data
+      // System account: verify we OWN it (not just sponsored it)
+      // CRITICAL: You can only close accounts where you are the owner
+      if (this.keypair) {
+        checks.ownershipVerified = info.owner.equals(this.keypair.publicKey);
+      } else {
+        checks.ownershipVerified = false;
+      }
+
+      if (!checks.ownershipVerified) {
+        return {
+          address: account.address,
+          canReclaim: false,
+          reason: `Cannot close: account is owned by ${info.owner.toString().slice(0, 8)}... not your keypair`,
+          riskLevel: "blocked",
+          checks,
+        };
+      }
+
       checks.isEmptyOrZeroBalance =
         info.data.length === 0 || info.data.every((b) => b === 0);
 
@@ -444,11 +486,12 @@ export class SafeRentReclaimer {
           let txSignature: string;
 
           if (account.accountType === "token") {
-            // Close token account
+            // Close token account - only works if WE are the owner
+            // The validation should have already verified this
             const closeIx = createCloseAccountInstruction(
               pubkey,
               this.treasury,
-              this.keypair.publicKey
+              this.keypair.publicKey // We must be the owner
             );
             const tx = new Transaction().add(closeIx);
             txSignature = await sendAndConfirmTransaction(
@@ -458,8 +501,25 @@ export class SafeRentReclaimer {
               { commitment: "confirmed" }
             );
           } else {
-            // Transfer lamports (system account)
-            // Note: This only works if we own the account
+            // System account - we can only transfer if we OWN the account
+            // For system accounts owned by us, we transfer all lamports out
+            // NOTE: This requires the account to be owned by our keypair's pubkey
+            // If the account is owned by System Program, we need different logic
+            
+            if (info.owner.equals(SystemProgram.programId)) {
+              // Account is owned by System Program - we need to be the account itself
+              // This means our keypair must BE the account (which is rare)
+              // In practice, this won't work for sponsored accounts
+              console.log(`      [ERROR] System-owned accounts cannot be drained by third parties`);
+              report.errors.push({ 
+                address: account.address, 
+                error: "Cannot drain: account owned by System Program, not your keypair" 
+              });
+              report.accountsFailed++;
+              continue;
+            }
+            
+            // Account owned by our keypair - we can transfer
             const transferIx = SystemProgram.transfer({
               fromPubkey: pubkey,
               toPubkey: this.treasury,

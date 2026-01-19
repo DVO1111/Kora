@@ -1,12 +1,42 @@
  # Kora Rent Reclaim Bot
 
-> **Recover locked SOL from Kora-sponsored accounts**
+> **Track and monitor SOL locked in Kora-sponsored accounts**
 
 A Kora operator installs this tool and finally understands:
 - How much SOL is silently locked
 - Where it is locked  
-- Which accounts are dead
-- And gets their SOL back safely
+- Which accounts are dead/empty
+- Track when users close their accounts
+
+---
+
+## IMPORTANT: Understanding Solana Account Ownership
+
+### The Hard Truth About "Reclaiming" Rent
+
+On Solana, **you can only close accounts you OWN**. When Kora sponsors account creation:
+
+| Who Pays | Who Owns | Who Can Close | Where Rent Goes |
+|----------|----------|---------------|-----------------|
+| Operator (you) | User | User only | Back to User |
+
+**This means**: Even though you PAID for the account, you CANNOT close it or reclaim the rent. The user must close it, and the rent returns to THEM.
+
+### What This Bot Actually Does
+
+| Feature | Description |
+|---------|-------------|
+| **Track** | Monitor all accounts you've sponsored |
+| **Monitor** | Check which are active, empty, or closed |
+| **Report** | See how much SOL is locked in sponsorships |
+| **Notify** | Know when users close their accounts |
+| **Reclaim** | Close accounts YOU own (rare cases only) |
+
+### When CAN You Actually Reclaim?
+
+1. **Accounts you own** - If you retained ownership (rare)
+2. **Your own ATAs** - Token accounts where YOU are the wallet owner
+3. **PDAs your program controls** - If you have the authority
 
 ---
 

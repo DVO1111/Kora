@@ -175,13 +175,54 @@ export class KoraSponsorshipTracker {
     };
   }
 
+  private getLockPath(): string {
+    return this.registryPath + ".lock";
+  }
+
+  private acquireLock(): boolean {
+    const lockPath = this.getLockPath();
+    try {
+      // Check if lock exists and is stale (older than 5 minutes)
+      if (fs.existsSync(lockPath)) {
+        const lockStat = fs.statSync(lockPath);
+        const ageMs = Date.now() - lockStat.mtimeMs;
+        if (ageMs < 5 * 60 * 1000) {
+          // Lock is fresh, another process is running
+          return false;
+        }
+        // Lock is stale, remove it
+        fs.unlinkSync(lockPath);
+      }
+      // Create lock file
+      fs.writeFileSync(lockPath, String(process.pid));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private releaseLock(): void {
+    const lockPath = this.getLockPath();
+    try {
+      if (fs.existsSync(lockPath)) {
+        fs.unlinkSync(lockPath);
+      }
+    } catch {
+      // Ignore errors releasing lock
+    }
+  }
+
   private saveRegistry(): void {
     const dir = path.dirname(this.registryPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
     this.registry.lastUpdated = new Date().toISOString();
-    fs.writeFileSync(this.registryPath, JSON.stringify(this.registry, null, 2));
+    
+    // Write to temp file first, then rename (atomic operation)
+    const tempPath = this.registryPath + ".tmp";
+    fs.writeFileSync(tempPath, JSON.stringify(this.registry, null, 2));
+    fs.renameSync(tempPath, this.registryPath);
   }
 
   // ==========================================================================
@@ -474,8 +515,12 @@ export class KoraSponsorshipTracker {
       TOKEN_PROGRAM_ID.toString(),
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", // Token Program
       "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", // Associated Token Program
+      "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s", // Metaplex Token Metadata
+      "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb", // Token-2022
+      "ComputeBudget111111111111111111111111111111", // Compute Budget
     ];
-    return knownPrograms.includes(address) || address.length === 44; // Most program IDs are 44 chars
+    // Only return true for known programs, not arbitrary addresses
+    return knownPrograms.includes(address);
   }
 
   private determineAccountType(owner: string | undefined): SponsoredAccount["accountType"] {
@@ -532,6 +577,22 @@ export class KoraSponsorshipTracker {
           if (oldStatus !== "closed") {
             this.registry.metrics.totalAccountsClosed++;
           }
+        } else if (account.accountType === "token") {
+          // For token accounts, check if balance is zero
+          // Token account data layout: first 64 bytes are mint + owner, bytes 64-72 are amount
+          if (info.data.length >= 72) {
+            const amount = info.data.readBigUInt64LE(64);
+            if (amount === 0n) {
+              account.status = "empty";
+              empty++;
+            } else {
+              account.status = "active";
+              active++;
+            }
+          } else {
+            account.status = "active";
+            active++;
+          }
         } else if (info.data.length === 0 || info.data.every((b) => b === 0)) {
           account.status = "empty";
           empty++;
@@ -577,10 +638,37 @@ export class KoraSponsorshipTracker {
     return this.registry.accounts;
   }
 
+  /**
+   * Get accounts that are empty/closed.
+   * 
+   * IMPORTANT: "Reclaimable" is misleading. These accounts are empty, but
+   * you likely CANNOT reclaim them because:
+   * - Token accounts are owned by users, not operators
+   * - System accounts require owner signature
+   * 
+   * Use this for MONITORING what rent has been "released" when users close accounts.
+   * The rent goes back to the USER who owned the account, not the operator who paid.
+   */
   getReclaimableAccounts(): SponsoredAccount[] {
     return this.registry.accounts.filter(
       (a) => a.status === "empty" || a.status === "closed"
     );
+  }
+
+  /**
+   * Get accounts where users have already closed them.
+   * The rent was returned to the USER, not the operator.
+   */
+  getClosedAccounts(): SponsoredAccount[] {
+    return this.registry.accounts.filter((a) => a.status === "closed");
+  }
+
+  /**
+   * Get empty accounts (zero balance tokens, empty system accounts).
+   * These could potentially be closed by users to recover rent.
+   */
+  getEmptyAccounts(): SponsoredAccount[] {
+    return this.registry.accounts.filter((a) => a.status === "empty");
   }
 
   getActiveAccounts(): SponsoredAccount[] {
@@ -610,5 +698,37 @@ export class KoraSponsorshipTracker {
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Execute an RPC call with exponential backoff for rate limits
+   */
+  private async withRetry<T>(
+    fn: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelayMs: number = 1000
+  ): Promise<T> {
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error as Error;
+        const message = lastError.message.toLowerCase();
+
+        // Check if it's a rate limit error
+        if (message.includes("429") || message.includes("rate") || message.includes("too many")) {
+          const delay = baseDelayMs * Math.pow(2, attempt);
+          console.log(`   Rate limited, waiting ${delay}ms before retry...`);
+          await this.sleep(delay);
+        } else {
+          // Not a rate limit error, don't retry
+          throw error;
+        }
+      }
+    }
+
+    throw lastError;
   }
 }
