@@ -135,6 +135,7 @@ export class KoraTelegramBot {
       { command: "watch", description: "Toggle auto-monitoring" },
       { command: "reclaim", description: "Reclaim eligible accounts" },
       { command: "settings", description: "View settings" },
+      { command: "analyze", description: "Analyze any wallet address" },
     ]);
 
     // Command handlers
@@ -148,9 +149,13 @@ export class KoraTelegramBot {
     this.bot.onText(/\/settings/, (msg) => this.handleSettings(msg));
     this.bot.onText(/\/confirm_reclaim/, (msg) => this.handleConfirmReclaim(msg));
     this.bot.onText(/\/cancel/, (msg) => this.handleCancel(msg));
+    this.bot.onText(/\/analyze(?:\s+(.+))?/, (msg, match) => this.handleAnalyze(msg, match));
 
     // Callback query handler for inline buttons
     this.bot.on("callback_query", (query) => this.handleCallbackQuery(query));
+
+    // Handle plain text messages (wallet addresses)
+    this.bot.on("message", (msg) => this.handleMessage(msg));
 
     console.log(`[${formatTimestamp()}] Telegram bot initialized`);
   }
@@ -171,18 +176,24 @@ export class KoraTelegramBot {
     const welcome = `
 *KORA RENT RECLAIM BOT*
 
-Welcome! This bot helps you recover locked SOL from Kora-sponsored accounts.
+Welcome! This bot helps you analyze Solana wallets and track Kora-sponsored accounts.
 
-*Quick Setup:*
-1. Ensure your operator address is configured
-2. Run /scan to find reclaimable accounts
-3. Use /reclaim to recover SOL (with safety checks)
+*Quick Start:*
+Paste any Solana wallet address to analyze it!
+
+*What you can do:*
+• View wallet balance and token accounts
+• See recent transaction activity  
+• Analyze sponsorship patterns
+• Track rent locked in token accounts
 
 *Current Configuration:*
 • Operator: \`${this.config.operatorAddress || "Not set"}\`
 • RPC: \`${this.config.rpcUrl.substring(0, 40)}...\`
 
 Use /help to see all commands.
+
+*Try it now:* Just paste a wallet address!
     `;
 
     await this.bot.sendMessage(chatId, welcome, { parse_mode: "Markdown" });
@@ -195,8 +206,14 @@ Use /help to see all commands.
     if (!userId || !this.isAuthorized(userId)) return;
 
     const help = `
-*Available Commands:*
+*KORA RENT RECLAIM BOT*
 
+*Wallet Analysis:*
+Just paste any Solana address to analyze it!
+
+/analyze [address] - Analyze a wallet address
+
+*Operator Commands:*
 /status - Show operator status and metrics
 /scan - Scan for accounts eligible for reclaim
 /report - Generate detailed reclaim report
@@ -204,6 +221,11 @@ Use /help to see all commands.
 /watch off - Stop auto-monitoring
 /reclaim - Reclaim eligible accounts (requires confirmation)
 /settings - View current settings
+
+*How to Use:*
+1. Paste any Solana wallet address
+2. View balance, tokens, and activity
+3. Click "Analyze as Operator" for sponsorship data
 
 *Safety Features:*
 • All reclaims require confirmation
@@ -599,6 +621,14 @@ Choose an action:`,
 
     const session = this.getSession(chatId);
 
+    // Handle analyze as operator button
+    if (data?.startsWith("analyze_operator_")) {
+      const address = data.replace("analyze_operator_", "");
+      await this.bot.answerCallbackQuery(query.id, { text: "Analyzing as operator..." });
+      await this.analyzeAsOperator(chatId, address);
+      return;
+    }
+
     if (data === "reclaim_cancel") {
       session.pendingReclaim = false;
       await this.bot.answerCallbackQuery(query.id, { text: "Cancelled" });
@@ -666,6 +696,305 @@ Choose an action:`,
       }
 
       session.pendingReclaim = false;
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // WALLET ADDRESS HANDLERS
+  // --------------------------------------------------------------------------
+
+  /**
+   * Handle plain text messages - check if they're wallet addresses
+   */
+  private async handleMessage(msg: TelegramBot.Message): Promise<void> {
+    const chatId = msg.chat.id;
+    const userId = msg.from?.id;
+    const text = msg.text?.trim();
+
+    // Skip if no text, is a command, or user not authorized
+    if (!text || text.startsWith("/") || !userId || !this.isAuthorized(userId)) {
+      return;
+    }
+
+    // Check if it looks like a Solana address (32-44 chars, base58)
+    if (this.isValidSolanaAddress(text)) {
+      await this.analyzeWallet(chatId, text);
+    }
+  }
+
+  /**
+   * Handle /analyze command with optional address
+   */
+  private async handleAnalyze(msg: TelegramBot.Message, match: RegExpExecArray | null): Promise<void> {
+    const chatId = msg.chat.id;
+    const userId = msg.from?.id;
+
+    if (!userId || !this.isAuthorized(userId)) return;
+
+    const address = match?.[1]?.trim();
+
+    if (!address) {
+      await this.bot.sendMessage(
+        chatId,
+        "Send a Solana wallet address to analyze it.\n\nExample:\n`/analyze 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU`\n\nOr just paste any address directly!",
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    if (!this.isValidSolanaAddress(address)) {
+      await this.bot.sendMessage(chatId, "Invalid Solana address format. Please check and try again.");
+      return;
+    }
+
+    await this.analyzeWallet(chatId, address);
+  }
+
+  /**
+   * Check if string is a valid Solana address
+   */
+  private isValidSolanaAddress(address: string): boolean {
+    // Base58 characters (no 0, O, I, l)
+    const base58Regex = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+    if (!base58Regex.test(address)) return false;
+
+    try {
+      new PublicKey(address);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Analyze a wallet address and send detailed results
+   */
+  private async analyzeWallet(chatId: number, address: string): Promise<void> {
+    const loadingMsg = await this.bot.sendMessage(chatId, "Analyzing wallet...");
+
+    try {
+      const connection = new Connection(this.config.rpcUrl, "confirmed");
+      const pubkey = new PublicKey(address);
+
+      // Get basic account info
+      const accountInfo = await connection.getAccountInfo(pubkey);
+      const balance = await connection.getBalance(pubkey);
+
+      // Get recent transactions
+      const signatures = await connection.getSignaturesForAddress(pubkey, { limit: 10 });
+
+      // Get token accounts
+      const tokenAccounts = await connection.getParsedTokenAccountsByOwner(pubkey, {
+        programId: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+      });
+
+      // Build response
+      let response = `*WALLET ANALYSIS*\n\n`;
+      response += `*Address:*\n\`${address}\`\n\n`;
+      
+      response += `${"─".repeat(30)}\n`;
+      response += `*BALANCE*\n`;
+      response += `${"─".repeat(30)}\n`;
+      response += `SOL: ${formatSol(balance)}\n\n`;
+
+      // Account info
+      response += `${"─".repeat(30)}\n`;
+      response += `*ACCOUNT INFO*\n`;
+      response += `${"─".repeat(30)}\n`;
+      if (accountInfo) {
+        response += `Owner: \`${accountInfo.owner.toString().slice(0, 12)}...\`\n`;
+        response += `Data Size: ${accountInfo.data.length} bytes\n`;
+        response += `Executable: ${accountInfo.executable ? "Yes" : "No"}\n`;
+        response += `Rent Epoch: ${accountInfo.rentEpoch}\n`;
+      } else {
+        response += `Status: Empty (no data)\n`;
+      }
+      response += `\n`;
+
+      // Token accounts
+      response += `${"─".repeat(30)}\n`;
+      response += `*TOKEN ACCOUNTS (${tokenAccounts.value.length})*\n`;
+      response += `${"─".repeat(30)}\n`;
+      
+      if (tokenAccounts.value.length > 0) {
+        let totalRentLocked = 0;
+        let emptyTokenAccounts = 0;
+        
+        for (const ta of tokenAccounts.value.slice(0, 5)) {
+          const parsed = ta.account.data.parsed;
+          const info = parsed.info;
+          const amount = info.tokenAmount.uiAmount || 0;
+          const mint = info.mint.slice(0, 8) + "...";
+          const rentLamports = ta.account.lamports;
+          totalRentLocked += rentLamports;
+          
+          if (amount === 0) emptyTokenAccounts++;
+          
+          response += `• ${mint}: ${amount} tokens\n`;
+          response += `  Rent: ${formatSol(rentLamports)}\n`;
+        }
+        
+        if (tokenAccounts.value.length > 5) {
+          response += `  ... and ${tokenAccounts.value.length - 5} more\n`;
+        }
+        
+        response += `\n*Token Account Summary:*\n`;
+        response += `• Total ATAs: ${tokenAccounts.value.length}\n`;
+        response += `• Empty ATAs: ${emptyTokenAccounts}\n`;
+        response += `• Rent Locked: ${formatSol(totalRentLocked)}\n`;
+      } else {
+        response += `No token accounts found\n`;
+      }
+      response += `\n`;
+
+      // Recent transactions
+      response += `${"─".repeat(30)}\n`;
+      response += `*RECENT ACTIVITY*\n`;
+      response += `${"─".repeat(30)}\n`;
+      
+      if (signatures.length > 0) {
+        for (const sig of signatures.slice(0, 5)) {
+          const date = sig.blockTime
+            ? new Date(sig.blockTime * 1000).toLocaleDateString()
+            : "unknown";
+          const status = sig.err ? "FAILED" : "OK";
+          response += `• ${date} [${status}]\n`;
+          response += `  \`${sig.signature.slice(0, 16)}...\`\n`;
+        }
+        
+        if (signatures.length > 5) {
+          response += `  ... and ${signatures.length - 5} more\n`;
+        }
+      } else {
+        response += `No recent transactions\n`;
+      }
+
+      // Add action buttons
+      const keyboard = {
+        inline_keyboard: [
+          [
+            { text: "View on Solscan", url: `https://solscan.io/account/${address}` },
+            { text: "View on Explorer", url: `https://explorer.solana.com/address/${address}` },
+          ],
+          [
+            { text: "Analyze as Operator", callback_data: `analyze_operator_${address}` },
+          ],
+        ],
+      };
+
+      await this.bot.editMessageText(response, {
+        chat_id: chatId,
+        message_id: loadingMsg.message_id,
+        parse_mode: "Markdown",
+        reply_markup: keyboard,
+      });
+
+    } catch (error) {
+      await this.bot.editMessageText(
+        `Error analyzing wallet: ${(error as Error).message}`,
+        { chat_id: chatId, message_id: loadingMsg.message_id }
+      );
+    }
+  }
+
+  /**
+   * Analyze address as a Kora operator (sponsored accounts analysis)
+   */
+  private async analyzeAsOperator(chatId: number, address: string): Promise<void> {
+    const loadingMsg = await this.bot.sendMessage(chatId, "Analyzing as operator (this may take a moment)...");
+
+    try {
+      const connection = new Connection(this.config.rpcUrl, "confirmed");
+      const pubkey = new PublicKey(address);
+
+      // Get operator balance
+      const balance = await connection.getBalance(pubkey);
+
+      // Get recent signatures to analyze sponsorship patterns
+      const signatures = await connection.getSignaturesForAddress(pubkey, { limit: 100 });
+
+      let sponsorshipCount = 0;
+      let totalFeesSpent = 0;
+      let accountCreations = 0;
+
+      // Analyze transactions for sponsorship patterns
+      for (const sigInfo of signatures.slice(0, 20)) {
+        try {
+          const tx = await connection.getParsedTransaction(sigInfo.signature, {
+            maxSupportedTransactionVersion: 0,
+          });
+
+          if (tx && !tx.meta?.err) {
+            // Check if this address was fee payer
+            const feePayer = tx.transaction.message.accountKeys[0]?.pubkey;
+            if (feePayer?.toString() === address) {
+              totalFeesSpent += tx.meta?.fee || 0;
+
+              // Look for account creation instructions
+              for (const ix of tx.transaction.message.instructions) {
+                if ("parsed" in ix) {
+                  const parsed = ix.parsed;
+                  if (
+                    parsed?.type === "createAccount" ||
+                    parsed?.type === "create" ||
+                    parsed?.type === "createAccountWithSeed"
+                  ) {
+                    accountCreations++;
+                    // Check if beneficiary is different from operator
+                    const info = parsed.info;
+                    const beneficiary = info?.wallet || info?.newAccount || info?.base;
+                    if (beneficiary && beneficiary !== address) {
+                      sponsorshipCount++;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch {
+          // Skip failed transaction fetches
+        }
+      }
+
+      let response = `*OPERATOR ANALYSIS*\n\n`;
+      response += `*Address:*\n\`${address}\`\n\n`;
+      
+      response += `${"─".repeat(30)}\n`;
+      response += `*WALLET STATUS*\n`;
+      response += `${"─".repeat(30)}\n`;
+      response += `Balance: ${formatSol(balance)}\n\n`;
+
+      response += `${"─".repeat(30)}\n`;
+      response += `*SPONSORSHIP ACTIVITY*\n`;
+      response += `(Last 100 transactions)\n`;
+      response += `${"─".repeat(30)}\n`;
+      response += `Total Transactions: ${signatures.length}\n`;
+      response += `Account Creations: ${accountCreations}\n`;
+      response += `Sponsored (for others): ${sponsorshipCount}\n`;
+      response += `Total Fees Paid: ${formatSol(totalFeesSpent)}\n\n`;
+
+      if (sponsorshipCount > 0) {
+        const avgRentPerAccount = 2039280; // ATA rent
+        const estimatedRentLocked = sponsorshipCount * avgRentPerAccount;
+        response += `*Estimated Rent Locked:*\n`;
+        response += `~${formatSol(estimatedRentLocked)}\n\n`;
+        response += `_Note: This is an estimate based on recent activity._\n`;
+      }
+
+      response += `\n*Next Steps:*\n`;
+      response += `Use /scan with this as your operator address to get full tracking.`;
+
+      await this.bot.editMessageText(response, {
+        chat_id: chatId,
+        message_id: loadingMsg.message_id,
+        parse_mode: "Markdown",
+      });
+
+    } catch (error) {
+      await this.bot.editMessageText(
+        `Error: ${(error as Error).message}`,
+        { chat_id: chatId, message_id: loadingMsg.message_id }
+      );
     }
   }
 
