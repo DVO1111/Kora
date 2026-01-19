@@ -10,6 +10,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/bot.js",
+    "telegram": "node dist/telegram/telegramBot.js",
     "ingest": "node dist/bot.js ingest",
     "scan": "node dist/bot.js scan",
     "reclaim": "node dist/bot.js reclaim",
@@ -34,6 +35,7 @@
     "axios": "^1.6.5",
     "dotenv": "^16.3.1",
     "node-cron": "^3.0.3",
+    "node-telegram-bot-api": "^0.67.0",
     "winston": "^3.11.0",
     "yargs": "^17.7.2"
   },
@@ -42,6 +44,7 @@
     "@types/json-schema": "^7.0.15",
     "@types/node": "^20.19.30",
     "@types/node-cron": "^3.0.11",
+    "@types/node-telegram-bot-api": "^0.64.13",
     "@types/ws": "^8.18.1",
     "@types/yargs": "^17.0.35",
     "@typescript-eslint/eslint-plugin": "^6.17.0",

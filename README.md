@@ -1,4 +1,4 @@
-# Kora Rent Reclaim Bot
+ # Kora Rent Reclaim Bot
 
 > **Recover locked SOL from Kora-sponsored accounts**
 
@@ -473,6 +473,128 @@ Depends on your sponsorship volume. Typical results:
 - Small operator (1K accounts): 2-5 SOL
 - Medium operator (10K accounts): 20-50 SOL
 - Large operator (100K accounts): 200-500 SOL
+
+---
+
+## Telegram Bot Interface
+
+Instead of CLI commands, you can control the bot via Telegram for a more user-friendly experience.
+
+### Setup
+
+1. **Create a Telegram Bot**
+   - Open Telegram and message [@BotFather](https://t.me/BotFather)
+   - Send `/newbot` and follow the prompts
+   - Copy the bot token (looks like `123456789:ABCdefGHIjklMNO...`)
+
+2. **Configure the bot**
+
+   Add to your `config.json`:
+   ```json
+   {
+     "telegramToken": "YOUR_BOT_TOKEN",
+     "operatorAddress": "YOUR_OPERATOR_ADDRESS",
+     "rpcUrl": "https://api.mainnet-beta.solana.com",
+     "treasuryAddress": "YOUR_TREASURY_ADDRESS",
+     "privateKeyPath": "./keypair.json",
+     "authorizedUsers": [123456789]
+   }
+   ```
+
+   Or use environment variables:
+   ```bash
+   export TELEGRAM_BOT_TOKEN="your_bot_token"
+   export OPERATOR_ADDRESS="your_operator_address"
+   export SOLANA_RPC_URL="https://api.mainnet-beta.solana.com"
+   ```
+
+3. **Get your Telegram User ID**
+   - Message [@userinfobot](https://t.me/userinfobot) to get your ID
+   - Add it to `authorizedUsers` for security (optional)
+
+4. **Start the bot**
+   ```bash
+   npm run telegram
+   ```
+
+### Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `/start` | Welcome message and setup info |
+| `/help` | Show all available commands |
+| `/status` | Operator wallet status and metrics |
+| `/scan` | Scan for reclaimable accounts |
+| `/report` | Generate detailed reclaim report |
+| `/watch [minutes]` | Start auto-monitoring (default: 60 min) |
+| `/watch off` | Stop auto-monitoring |
+| `/reclaim` | Reclaim eligible accounts (with confirmation) |
+| `/settings` | View current configuration |
+
+### Example Session
+
+```
+You: /status
+
+Bot: OPERATOR STATUS
+
+Wallet:
+• Address: 7xKXtg2C...JosgAsU
+• Balance: 12.345678 SOL
+
+Sponsorship Metrics:
+• Total Sponsored: 1,247
+• Total Rent Locked: 152.34 SOL
+• Reclaimed: 45.12 SOL
+• Pending: 107.22 SOL
+
+Watch Mode:
+• Status: Inactive
+
+---
+
+You: /scan
+
+Bot: SCAN COMPLETE
+
+Account Status:
+• Active: 891
+• Empty: 44
+• Closed: 312
+• Updated: 1247
+
+Reclaimable:
+• Accounts: 44
+• Total SOL: 0.088 SOL
+
+Use /reclaim to recover this SOL.
+
+---
+
+You: /reclaim
+
+Bot: RECLAIM CONFIRMATION
+
+Ready to reclaim:
+• Accounts: 44
+• Total SOL: 0.088 SOL
+• Treasury: 9yVmSvE5...BvETNqKY
+
+Choose an action:
+[Dry Run First] [Execute Reclaim] [Cancel]
+```
+
+### Watch Mode Notifications
+
+When watch mode is active, you'll receive automatic notifications:
+
+```
+[2025-01-20 08:00:00] Auto-scan complete
+• Found: 12 accounts eligible
+• Reclaimable: 0.024 SOL
+
+Use /reclaim to recover.
+```
 
 ---
 
