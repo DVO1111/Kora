@@ -20,6 +20,7 @@ import { Connection, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import * as fs from "fs";
 import { KoraSponsorshipTracker } from "../core/sponsorshipTracker.js";
 import { SafeRentReclaimer, DEFAULT_SAFETY_CONFIG } from "../core/safeReclaimer.js";
+import { PhantomDeepLink, shortenAddress as shortAddr, formatSolAmount } from "../core/phantomDeepLink.js";
 
 // ============================================================================
 // TYPES
@@ -129,18 +130,20 @@ export class KoraTelegramBot {
     this.bot.setMyCommands([
       { command: "start", description: "Welcome & setup" },
       { command: "help", description: "Show commands" },
+      { command: "myreclaim", description: "Reclaim YOUR empty token accounts" },
+      { command: "analyze", description: "Analyze any wallet address" },
       { command: "status", description: "Operator status & metrics" },
       { command: "scan", description: "Scan for reclaimable accounts" },
       { command: "report", description: "Detailed report" },
       { command: "watch", description: "Toggle auto-monitoring" },
-      { command: "reclaim", description: "Reclaim eligible accounts" },
+      { command: "reclaim", description: "Reclaim operator accounts" },
       { command: "settings", description: "View settings" },
-      { command: "analyze", description: "Analyze any wallet address" },
     ]);
 
     // Command handlers
     this.bot.onText(/\/start/, (msg) => this.handleStart(msg));
     this.bot.onText(/\/help/, (msg) => this.handleHelp(msg));
+    this.bot.onText(/\/myreclaim(?:\s+(.+))?/, (msg, match) => this.handleMyReclaim(msg, match));
     this.bot.onText(/\/status/, (msg) => this.handleStatus(msg));
     this.bot.onText(/\/scan/, (msg) => this.handleScan(msg));
     this.bot.onText(/\/report/, (msg) => this.handleReport(msg));
@@ -213,25 +216,28 @@ Just paste any Solana address to analyze it!
 
 /analyze [address] - Analyze a wallet address
 
+*Reclaim YOUR Rent:*
+/myreclaim [address] - Get links to reclaim YOUR empty token accounts
+(No private keys needed - sign with Phantom/Solflare!)
+
 *Operator Commands:*
 /status - Show operator status and metrics
 /scan - Scan for accounts eligible for reclaim
 /report - Generate detailed reclaim report
 /watch [minutes] - Start auto-monitoring (default: 60 min)
 /watch off - Stop auto-monitoring
-/reclaim - Reclaim eligible accounts (requires confirmation)
+/reclaim - Reclaim operator accounts (requires key)
 /settings - View current settings
 
 *How to Use:*
 1. Paste any Solana wallet address
 2. View balance, tokens, and activity
-3. Click "Analyze as Operator" for sponsorship data
+3. Use /myreclaim to close empty accounts and get SOL back!
 
 *Safety Features:*
-• All reclaims require confirmation
-• Only empty/inactive accounts are touched
-• 7-day minimum account age
-• Dry-run available before execution
+• Only empty token accounts can be closed
+• You sign with YOUR wallet (Phantom/Solflare)
+• No private keys shared with the bot
     `;
 
     await this.bot.sendMessage(chatId, help, { parse_mode: "Markdown" });
@@ -697,6 +703,233 @@ Choose an action:`,
 
       session.pendingReclaim = false;
     }
+
+    // Handle myreclaim callback buttons
+    if (data?.startsWith("myreclaim_")) {
+      const parts = data.split("_");
+      const action = parts[1];
+      const walletAddress = parts.slice(2).join("_");
+
+      if (action === "all") {
+        await this.bot.answerCallbackQuery(query.id, { text: "Generating transaction..." });
+        await this.generateReclaimLinks(chatId, walletAddress);
+      } else if (action === "batch") {
+        const batchNum = parseInt(parts[2]);
+        const address = parts.slice(3).join("_");
+        await this.bot.answerCallbackQuery(query.id, { text: `Generating batch ${batchNum}...` });
+        await this.generateReclaimLinks(chatId, address, batchNum);
+      }
+      return;
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // USER RECLAIM (PHANTOM/SOLFLARE DEEP LINKS)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Handle /myreclaim command - let users reclaim their own empty token accounts
+   */
+  private async handleMyReclaim(msg: TelegramBot.Message, match: RegExpExecArray | null): Promise<void> {
+    const chatId = msg.chat.id;
+    const userId = msg.from?.id;
+
+    if (!userId || !this.isAuthorized(userId)) return;
+
+    const walletAddress = match?.[1]?.trim();
+
+    if (!walletAddress) {
+      await this.bot.sendMessage(
+        chatId,
+        `*RECLAIM YOUR RENT*
+
+Send your wallet address to find empty token accounts you can close to get SOL back!
+
+Usage: \`/myreclaim <your-wallet-address>\`
+
+Example:
+\`/myreclaim 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU\`
+
+*How it works:*
+1. We scan your wallet for empty token accounts
+2. You get links to sign with Phantom or Solflare
+3. You approve the transaction in your wallet
+4. Rent is returned to your wallet!
+
+No private keys needed - you sign everything yourself.`,
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    if (!this.isValidSolanaAddress(walletAddress)) {
+      await this.bot.sendMessage(chatId, "Invalid Solana address format. Please check and try again.");
+      return;
+    }
+
+    await this.scanForUserReclaim(chatId, walletAddress);
+  }
+
+  /**
+   * Scan wallet for closable token accounts
+   */
+  private async scanForUserReclaim(chatId: number, walletAddress: string): Promise<void> {
+    const statusMsg = await this.bot.sendMessage(
+      chatId,
+      `Scanning \`${walletAddress}\` for empty token accounts...`,
+      { parse_mode: "Markdown" }
+    );
+
+    try {
+      const phantom = new PhantomDeepLink(this.config.rpcUrl);
+      const summary = await phantom.getWalletReclaimSummary(walletAddress);
+
+      if (summary.closable.length === 0) {
+        let message = `*NO EMPTY ACCOUNTS FOUND*
+
+Wallet: \`${walletAddress}\`
+
+`;
+        if (summary.nonClosable.length > 0) {
+          message += `Found ${summary.nonClosable.length} token account(s) with balances:\n`;
+          for (const acc of summary.nonClosable.slice(0, 5)) {
+            message += `• \`${shortAddr(acc.address)}\` - ${acc.reason}\n`;
+          }
+          if (summary.nonClosable.length > 5) {
+            message += `...and ${summary.nonClosable.length - 5} more\n`;
+          }
+          message += `\nTransfer tokens out first to close these accounts.`;
+        } else {
+          message += `This wallet has no token accounts to close.`;
+        }
+
+        await this.bot.editMessageText(message, {
+          chat_id: chatId,
+          message_id: statusMsg.message_id,
+          parse_mode: "Markdown",
+        });
+        return;
+      }
+
+      // Found closable accounts!
+      let message = `*FOUND ${summary.closable.length} EMPTY TOKEN ACCOUNT${summary.closable.length > 1 ? "S" : ""}*
+
+Wallet: \`${walletAddress}\`
+Total Reclaimable: *${summary.totalReclaimableSol} SOL*
+
+*Empty accounts:*\n`;
+
+      for (const acc of summary.closable.slice(0, 10)) {
+        message += `• \`${shortAddr(acc.address)}\` - ${formatSolAmount(acc.rentLamports)}\n`;
+      }
+
+      if (summary.closable.length > 10) {
+        message += `...and ${summary.closable.length - 10} more\n`;
+      }
+
+      // Create action buttons
+      const keyboard: TelegramBot.InlineKeyboardMarkup = {
+        inline_keyboard: [],
+      };
+
+      if (summary.closable.length <= 10) {
+        // Can close all in one transaction
+        keyboard.inline_keyboard.push([
+          { text: `Close All (${summary.totalReclaimableSol} SOL)`, callback_data: `myreclaim_all_${walletAddress}` }
+        ]);
+      } else {
+        // Need multiple batches
+        const batches = Math.ceil(summary.closable.length / 10);
+        message += `\n_Note: Max 10 accounts per transaction. You'll need ${batches} transactions._\n`;
+        
+        for (let i = 0; i < Math.min(batches, 3); i++) {
+          const batchAccounts = summary.closable.slice(i * 10, (i + 1) * 10);
+          const batchRent = batchAccounts.reduce((sum, a) => sum + a.rentLamports, 0);
+          keyboard.inline_keyboard.push([
+            { text: `Batch ${i + 1}: ${batchAccounts.length} accounts (${formatSolAmount(batchRent)})`, callback_data: `myreclaim_batch_${i}_${walletAddress}` }
+          ]);
+        }
+      }
+
+      if (summary.nonClosable.length > 0) {
+        message += `\n_${summary.nonClosable.length} account(s) have balances and cannot be closed._`;
+      }
+
+      await this.bot.editMessageText(message, {
+        chat_id: chatId,
+        message_id: statusMsg.message_id,
+        parse_mode: "Markdown",
+        reply_markup: keyboard,
+      });
+    } catch (error) {
+      await this.bot.editMessageText(`Error scanning wallet: ${(error as Error).message}`, {
+        chat_id: chatId,
+        message_id: statusMsg.message_id,
+      });
+    }
+  }
+
+  /**
+   * Generate Phantom/Solflare deep links for closing accounts
+   */
+  private async generateReclaimLinks(chatId: number, walletAddress: string, batchNum?: number): Promise<void> {
+    const statusMsg = await this.bot.sendMessage(chatId, "Generating transaction...");
+
+    try {
+      const phantom = new PhantomDeepLink(this.config.rpcUrl);
+      const summary = await phantom.getWalletReclaimSummary(walletAddress);
+
+      if (summary.closable.length === 0) {
+        await this.bot.editMessageText("No empty accounts found.", {
+          chat_id: chatId,
+          message_id: statusMsg.message_id,
+        });
+        return;
+      }
+
+      // Select accounts for this batch
+      let accountsToClose: string[];
+      if (batchNum !== undefined) {
+        accountsToClose = summary.closable.slice(batchNum * 10, (batchNum + 1) * 10).map(a => a.address);
+      } else {
+        accountsToClose = summary.closable.slice(0, 10).map(a => a.address);
+      }
+
+      // Create the transaction
+      const tx = await phantom.createCloseAccountsTransaction(
+        walletAddress,
+        accountsToClose
+      );
+
+      const message = `*SIGN TO RECLAIM ${tx.totalSol} SOL*
+
+Closing ${tx.accountCount} empty token account${tx.accountCount > 1 ? "s" : ""}
+
+*Click to sign with your wallet:*
+
+[Open in Phantom](${tx.phantomUrl})
+
+[Open in Solflare](${tx.solflareUrl})
+
+_Opens your mobile wallet app to sign the transaction. The rent will be returned to your wallet._
+
+*Important:*
+• Make sure you're signing for the correct wallet
+• The transaction will close empty token accounts only
+• Rent goes back to YOUR wallet`;
+
+      await this.bot.editMessageText(message, {
+        chat_id: chatId,
+        message_id: statusMsg.message_id,
+        parse_mode: "Markdown",
+        disable_web_page_preview: true,
+      });
+    } catch (error) {
+      await this.bot.editMessageText(`Error: ${(error as Error).message}`, {
+        chat_id: chatId,
+        message_id: statusMsg.message_id,
+      });
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -1044,19 +1277,13 @@ export function loadBotConfig(): BotConfig {
   };
 }
 
-// Run if executed directly
-const isMainModule = import.meta.url === `file://${process.argv[1]}`;
-if (isMainModule) {
+// Run the bot
+async function main() {
   const config = loadBotConfig();
 
   if (!config.telegramToken) {
     console.error("Error: TELEGRAM_BOT_TOKEN not set");
     console.error("Set it via environment variable or in config.json");
-    process.exit(1);
-  }
-
-  if (!config.operatorAddress) {
-    console.error("Error: OPERATOR_ADDRESS not set");
     process.exit(1);
   }
 
@@ -1068,10 +1295,13 @@ if (isMainModule) {
 ╚══════════════════════════════════════════════════════════════╝
 `);
   console.log(`[${formatTimestamp()}] Starting Telegram bot...`);
-  console.log(`[${formatTimestamp()}] Operator: ${config.operatorAddress}`);
+  console.log(`[${formatTimestamp()}] Operator: ${config.operatorAddress || "Not configured"}`);
   console.log(`[${formatTimestamp()}] RPC: ${config.rpcUrl}`);
+  console.log(`[${formatTimestamp()}] Authorized users: ${config.authorizedUsers.length > 0 ? config.authorizedUsers.join(", ") : "All users allowed"}`);
 
   const bot = new KoraTelegramBot(config);
+
+  console.log(`[${formatTimestamp()}] Bot is running! Send /start to your bot.`);
 
   // Graceful shutdown
   process.on("SIGINT", () => {
@@ -1085,3 +1315,8 @@ if (isMainModule) {
     process.exit(0);
   });
 }
+
+main().catch((error) => {
+  console.error("Fatal error:", error);
+  process.exit(1);
+});
