@@ -1,8 +1,8 @@
 {
   "operator": "vines1vzrYbzLMRdu58ou5XTby4qAqVRLmqo36NKPTg",
   "createdAt": "2026-01-16T15:40:26.272Z",
-  "lastUpdated": "2026-01-20T10:29:05.917Z",
-  "totalTransactionsProcessed": 220,
+  "lastUpdated": "2026-01-21T08:51:05.258Z",
+  "totalTransactionsProcessed": 419,
   "accounts": [
     {
       "address": "HDZKwnPWpTLwpUkysjbNv2iCuzuK8raP5MwZn29g3JS9",
@@ -16,7 +16,7 @@
       "beneficiary": "Vote111111111111111111111111111111111111111",
       "status": "active",
       "sponsorshipConfidence": "high",
-      "lastChecked": 1768904945717
+      "lastChecked": 1768985465047
     }
   ],
   "metrics": {
