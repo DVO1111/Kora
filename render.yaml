@@ -1,0 +1,17 @@
+services:
+  - type: worker
+    name: kora-telegram-bot
+    runtime: node
+    buildCommand: npm install && npm run build
+    startCommand: npm run telegram
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: OPERATOR_ADDRESS
+        sync: false
+      - key: SOLANA_RPC_URL
+        value: https://api.devnet.solana.com
+      - key: AUTHORIZED_USERS
+        sync: false
+      - key: NODE_ENV
+        value: production
